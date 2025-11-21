@@ -91,7 +91,6 @@ Module({
     const flirt = FLIRT_LINES[Math.floor(Math.random() * FLIRT_LINES.length)];
 
     if (message.reply_message) {
-      // Adjust these fields to your framework’s message object if needed
       const targetName = message.reply_message.sender || message.reply_message.pushName || 'there';
       const targetJid = message.reply_message.jid;
       await message.reply(`😍 @${targetName} ${flirt}`, { mentions: [targetJid] });
