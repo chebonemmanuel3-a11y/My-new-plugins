@@ -1,6 +1,6 @@
 const { Module } = require('../main');
 const config = require('../config');
-const { skbuffer } = require('raganork-bot');
+const axios = require('axios');
 
 const LOGO_STYLES = {
   facebook: 'facebook',
@@ -10,7 +10,7 @@ const LOGO_STYLES = {
   avengers: 'avengers'
 };
 
-const LOGO_LIST = `Logo Maker
+const LOGO_LIST = `🎨 Logo Maker
 Usage: .logo <style> <text>
 
 Available styles:
@@ -40,12 +40,13 @@ Module({
       return await message.reply(LOGO_LIST);
     }
 
-    // Replace with your own logo API or image generator
-    const url = `https://raganork-network.vercel.app/api/logo/${LOGO_STYLES[style]}?text=${encodeURIComponent(text)}`;
+    const imageUrl = `https://raganork-network.vercel.app/api/logo/${LOGO_STYLES[style]}?text=${encodeURIComponent(text)}`;
 
-    const buffer = await skbuffer(url);
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(response.data, 'binary');
+
     await message.send(buffer, 'image', { caption: `🎨 ${style} logo: ${text}` });
   } catch (err) {
-    await message.reply('⚠️ Error generating logo. Try again.');
+    await message.reply('⚠️ Error generating logo. Try again or check your style name.');
   }
 });
