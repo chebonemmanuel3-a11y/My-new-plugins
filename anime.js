@@ -5,7 +5,7 @@ const axios = require('axios');
 Module({
   pattern: 'anime ?(.*)',
   fromMe: false,
-  desc: 'Fetches anime details from MyAnimeList',
+  desc: 'Fetches anime details with cover image',
   type: 'search',
 }, async (message, match) => {
   const query = match[1].trim();
@@ -25,7 +25,13 @@ Module({
 ⭐ Score: ${anime.score || 'N/A'}  
 📖 Synopsis: ${anime.synopsis ? anime.synopsis.substring(0, 300) + '...' : 'No synopsis available.'}`;
 
+    // Send text first
     await message.reply(replyText);
+
+    // Send cover image
+    if (anime.images && anime.images.jpg && anime.images.jpg.image_url) {
+      await message.sendFromUrl(anime.images.jpg.image_url, { caption: anime.title });
+    }
   } catch (err) {
     await message.reply('⚠️ Error fetching anime details. Try again later.');
   }
