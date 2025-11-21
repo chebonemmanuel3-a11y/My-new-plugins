@@ -20,7 +20,7 @@ const FLIRT_LINES = [
   "Are you a galaxy? Because my world revolves around you.",
   "Do you like roses? Because you’re blooming with beauty.",
   "Are you a spark? Because you ignite my soul.",
-  "Do you like adventures? Because life with you is the greatest journey."
+  "Do you like adventures? Because life with you is the greatest journey.",
   "Are you Wi‑Fi? Because I'm feeling a strong connection.",
   "Do you have a map? I keep getting lost in your eyes.",
   "If beauty were time, you’d be eternity.",
@@ -40,7 +40,7 @@ const FLIRT_LINES = [
   "Are you Australian? Because when I look at you, I feel like I’m down under.",
   "You must be made of copper and tellurium, because you’re Cu‑Te.",
   "Are you a parking ticket? Because you’ve got ‘Fine’ written all over you.",
-  "If you were a vegetable, you’d be a cute‑cumber."
+  "If you were a vegetable, you’d be a cute‑cumber.",
   "Are you a keyboard? Because you’re just my type.",
   "Do you have a pencil? Because I want to erase your past and write our future.",
   "Are you a time traveler? Because I see you in my future.",
@@ -62,7 +62,6 @@ const FLIRT_LINES = [
   "Are you a dream? Because I don’t want to wake up.",
   "Are you made of quarks and leptons? Because you’re elementary to my happiness.",
   "Are you a black hole? Because you just sucked me right in.",
-  "Are you Wi‑Fi? Because I’m feeling a strong connection.",
   "Are you a quantum particle? Because whenever I look, you change my state.",
   "Are you a neural network? Because you’ve learned all the patterns of my heart.",
   "Are you dark matter? Because you make up most of my universe.",
