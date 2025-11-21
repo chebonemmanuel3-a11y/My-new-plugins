@@ -1,49 +1,51 @@
 const { Module } = require('../main');
-const { MODE } = require('../config');
+const config = require('../config');
 const { skbuffer } = require('raganork-bot');
 
-var x = MODE === 'public' ? false : true;
+const LOGO_STYLES = {
+  facebook: 'facebook',
+  instagram: 'instagram',
+  twitter: 'twitter',
+  pubg: 'pubg',
+  avengers: 'avengers'
+};
 
-const list = `\`\`\`
-Logo Maker List
-Usage: .logo <styleNumber> <Text>
+const LOGO_LIST = `Logo Maker
+Usage: .logo <style> <text>
 
-01 - 11 : Calligraphy
-12 - 13 : Beast
-14 - 19 : Pubg
-20 - 25 : RRR
-26 - 27 : Free Fire
-28 - 29 : India
-30 - 32 : Avengers
-33 - 34 : Pushpa
-35 - 37 : Master
-38 - 44 : IPL
-45      : Dhoni
-46      : Vijay
-47 - 52 : KGF
-\`\`\``;
+Available styles:
+- facebook
+- instagram
+- twitter
+- pubg
+- avengers
+`;
 
 Module({
   pattern: 'logo ?(.*)',
-  fromMe: x,
+  fromMe: config.MODE === 'public' ? false : true,
   desc: 'Generate styled logos',
-  type: 'logo',
+  type: 'fun',
 }, async (message, match) => {
   try {
     if (!match || match.trim() === '' || match.toLowerCase() === 'list') {
-      return await message.reply(list);
+      return await message.reply(LOGO_LIST);
     }
 
     const args = match.split(' ');
-    const styleNumber = args[0];
+    const style = args[0].toLowerCase();
     const text = args.slice(1).join(' ') || 'Demo';
 
-    // Example API call (adjust endpoint to your logo API)
-    const url = `https://raganork-network.vercel.app/api/logo/${styleNumber}?text=${encodeURIComponent(text)}`;
+    if (!LOGO_STYLES[style]) {
+      return await message.reply(LOGO_LIST);
+    }
+
+    // Replace with your own logo API or image generator
+    const url = `https://raganork-network.vercel.app/api/logo/${LOGO_STYLES[style]}?text=${encodeURIComponent(text)}`;
 
     const buffer = await skbuffer(url);
-    await message.send(buffer, 'image', { caption: `🎨 Logo style ${styleNumber} with text: ${text}` });
+    await message.send(buffer, 'image', { caption: `🎨 ${style} logo: ${text}` });
   } catch (err) {
-    await message.reply('⚠️ Error generating logo. Please check your style number or text.');
+    await message.reply('⚠️ Error generating logo. Try again.');
   }
 });
