@@ -91,13 +91,12 @@ Module({
     const flirt = FLIRT_LINES[Math.floor(Math.random() * FLIRT_LINES.length)];
 
     if (message.reply_message) {
-      const targetName = message.reply_message.sender || message.reply_message.pushName || 'there';
-      const targetJid = message.reply_message.jid;
-      await message.reply(`😍 @${targetName} ${flirt}`, { mentions: [targetJid] });
+      const targetJid = message.reply_message.jid || message.reply_message.participant;
+      await message.reply(`😍 ${flirt}`, { mentions: [targetJid] });
     } else {
       await message.reply(`😍 ${flirt}`);
     }
-  } catch {
+  } catch (err) {
     await message.reply('⚠️ Something went wrong. Try again.');
   }
 });
