@@ -5,31 +5,25 @@ const axios = require('axios');
 Module({
   pattern: 'jpg ?(.*)',
   fromMe: config.MODE === 'public' ? false : true,
-  desc: 'Generate a stylish JPG image with text',
+  desc: 'Generate a JPG image with text (no canvas)',
   type: 'fun',
 }, async (message, match) => {
   try {
     const text = match || 'Stylish Text';
 
-    // Use FlamingText API to generate image
-    const apiUrl = `https://www.flamingtext.com/net-fu/proxy_form.cgi?script=sketch-name&text=${encodeURIComponent(text)}&doScale=true&scaleWidth=800&scaleHeight=500&fontsize=100`;
+    // Use a placeholder image generator that returns JPG directly
+    const imageUrl = `https://placehold.co/800x400/000000/FFFFFF.jpg?text=${encodeURIComponent(text)}`;
 
-    const response = await axios.get(apiUrl);
-    const imageUrl = response.data.match(/<image href="(.*?)"/)?.[1];
-
-    if (!imageUrl) {
-      return await message.reply('⚠️ Could not fetch image. Try a different text.');
-    }
-
-    const imageBuffer = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(response.data);
 
     await message.client.sendMessage(message.jid, {
-      image: Buffer.from(imageBuffer.data),
+      image: buffer,
       caption: `🖼️ JPG generated: ${text}`,
       mimetype: 'image/jpeg'
     });
   } catch (err) {
     console.error('jpg.js error:', err);
-    await message.reply('❌ Failed to generate JPG image. Try again later.');
+    await message.reply('⚠️ Failed to generate JPG image.');
   }
 });
