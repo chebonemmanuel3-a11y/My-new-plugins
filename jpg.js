@@ -9,21 +9,25 @@ Module({
   type: 'fun',
 }, async (message, match) => {
   try {
-    const text = match.replace(/^\.?jpg\s*/i, '').trim() || 'Stylish Text';
+    // Extract raw input after command
+    const raw = match?.trim();
+    if (!raw) return await message.reply('⚠️ Please provide text after .jpg');
 
-    // Use dummyimage.com for reliable image generation
-    const imageUrl = `https://dummyimage.com/800x400/000/fff.jpg&text=${encodeURIComponent(text)}`;
+    // Clean the input (remove command prefix if present)
+    const input = raw.replace(/^\.?jpg\s*/i, '').trim();
 
+    // Generate image using dummyimage.com
+    const imageUrl = `https://dummyimage.com/800x400/000/fff.jpg&text=${encodeURIComponent(input)}`;
     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data);
 
     await message.client.sendMessage(message.jid, {
       image: buffer,
-      caption: `🖼️ JPG generated: ${text}`,
+      caption: `🖼️ JPG generated: ${input}`,
       mimetype: 'image/jpeg'
     });
   } catch (err) {
     console.error('jpg.js error:', err);
-    await message.reply('⚠️ Failed to generate JPG image. Try again later.');
+    await message.reply('⚠️ Failed to generate JPG image.');
   }
 });
