@@ -1,6 +1,6 @@
 const { Module } = require('../main');
 const config = require('../config');
-const { createCanvas } = require('canvas');
+const axios = require('axios');
 
 Module({
   pattern: 'jpg ?(.*)',
@@ -11,47 +11,25 @@ Module({
   try {
     const text = match || 'Stylish Text';
 
-    // Canvas setup
-    const width = 1000;
-    const height = 500;
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+    // Use FlamingText API to generate image
+    const apiUrl = `https://www.flamingtext.com/net-fu/proxy_form.cgi?script=sketch-name&text=${encodeURIComponent(text)}&doScale=true&scaleWidth=800&scaleHeight=500&fontsize=100`;
 
-    // Background gradient
-    const bgGradient = ctx.createLinearGradient(0, 0, width, height);
-    bgGradient.addColorStop(0, '#ff512f'); // orange-red
-    bgGradient.addColorStop(1, '#dd2476'); // pink
-    ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, width, height);
+    const response = await axios.get(apiUrl);
+    const imageUrl = response.data.match(/<image href="(.*?)"/)?.[1];
 
-    // Text style
-    ctx.font = 'bold 100px Sans';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    if (!imageUrl) {
+      return await message.reply('⚠️ Could not fetch image. Try a different text.');
+    }
 
-    // Glow effect
-    ctx.shadowColor = 'rgba(255,255,255,0.9)';
-    ctx.shadowBlur = 40;
+    const imageBuffer = await axios.get(imageUrl, { responseType: 'arraybuffer' });
 
-    // Text gradient
-    const textGradient = ctx.createLinearGradient(0, 0, width, 0);
-    textGradient.addColorStop(0, '#00c6ff'); // cyan
-    textGradient.addColorStop(0.5, '#0072ff'); // deep blue
-    textGradient.addColorStop(1, '#00ff88'); // neon green
-    ctx.fillStyle = textGradient;
-
-    ctx.fillText(text, width / 2, height / 2);
-
-    // Convert to buffer
-    const buffer = canvas.toBuffer('image/jpeg');
-
-    // Send back to chat
     await message.client.sendMessage(message.jid, {
-      image: buffer,
-      caption: `✨ Stylish JPG: ${text}`,
+      image: Buffer.from(imageBuffer.data),
+      caption: `🖼️ JPG generated: ${text}`,
       mimetype: 'image/jpeg'
     });
   } catch (err) {
-    await message.reply('⚠️ Failed to generate stylish JPG image.');
+    console.error('jpg.js error:', err);
+    await message.reply('❌ Failed to generate JPG image. Try again later.');
   }
 });
