@@ -1,125 +1,153 @@
 const { Module } = require('../main');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const config = require('../config');
 
-// Simple autoplay DP updater for Raganork
-// .autodp on <url1,url2,...>  -> enable and set sources
-// .autodp off               -> disable
-// .autodp status            -> show status
-
-const STATE_KEY = 'AUTODP_SOURCES';
-const ENABLE_KEY = 'AUTODP_ENABLED';
-const DEFAULT_IMAGE_API = 'https://picsum.photos/500'; // Random image API
-
-function persist(key, value) {
-  try {
-    // store in dynamic config so it can be changed at runtime
-    config[key] = value;
-  } catch (e) {
-    console.error('Failed to persist autodp state', e);
-  }
-}
-
-async function downloadImage(url) {
-  const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 20000 });
-  return Buffer.from(res.data);
-}
-
-async function setProfilePicture(client, buffer) {
-  try {
-    // The bot's client exposes sendMessage and other helpers. The underlying
-    // WA client supports updateProfilePicture via setProfilePicture or similar.
-    // We'll attempt common methods used in this codebase.
-    if (typeof client.updateProfilePicture === 'function') {
-      await client.updateProfilePicture(buffer);
-      return true;
-    }
-
-    // fallback: send as profile picture using presence of contact update API
-    if (client.user && client.user.jid) {
-      // Some clients expose `updateProfilePicture` on `client` or `client.sock`.
-      if (client.sock && typeof client.sock.updateProfilePicture === 'function') {
-        await client.sock.updateProfilePicture(client.user.jid, buffer);
-        return true;
-      }
-    }
-
-    // as a last resort try to send an image to self and hope server updates
-    return false;
-  } catch (e) {
-    console.error('Failed to set profile picture', e);
-    return false;
-  }
-}
-
-let intervalId = null;
-
-async function startAutodp(client) {
-  const enabled = config[ENABLE_KEY];
-  if (!enabled) return;
-
-  if (intervalId) clearInterval(intervalId);
-
-  const run = async () => {
-    try {
-      // Fetch a random image from the API
-      const buf = await downloadImage(DEFAULT_IMAGE_API + '?random=' + Date.now());
-      const ok = await setProfilePicture(client, buf);
-      if (ok) {
-        console.info('autodp: updated profile picture from online source');
-      } else {
-        console.error('autodp: failed to update profile picture');
-      }
-    } catch (e) {
-      console.error('autodp: failed to fetch/set image', e.message || e);
-    }
-  };
-
-  // immediate run then schedule every 10 minutes
-  run().catch(() => {});
-  intervalId = setInterval(run, 10 * 60 * 1000);
-}
-
-function stopAutodp() {
-  if (intervalId) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
-}
+// Grab profile picture (DP) of a user.
+// Usage:
+// - In a direct chat: `.grab` -> gets the other participant's profile picture
+// - In a group: reply to someone's message with `.grab` -> gets the replied user's profile picture
 
 Module({
-  pattern: 'autodp ?(.*)',
-  fromMe: true,
-  use: 'owner',
-  desc: 'Auto-update profile picture from given URLs every 10 minutes',
+  pattern: 'grab',
+  fromMe: false,
+  use: 'utility',
+  desc: 'Grab profile picture of a user',
 }, async (message, match) => {
-  const arg = (match[1] || '').trim();
-  if (!arg) {
-    return await message.sendReply('_Usage: .autodp on | .autodp off | .autodp status_\nWhen enabled, fetches a random image from the internet every 10 minutes.');
-  }
+  try {
+    // If the command is used as a reply, prefer the replied user's id
+    let targetJid = null;
 
-  const cmd = arg.toLowerCase();
-  if (cmd === 'on') {
-    persist(ENABLE_KEY, true);
-    startAutodp(message.client);
-    return await message.sendReply('_AutoDP enabled. Will fetch a random image every 10 minutes._');
-  } else if (cmd === 'off') {
-    persist(ENABLE_KEY, false);
-    stopAutodp();
-    return await message.sendReply('_AutoDP disabled._');
-  } else if (cmd === 'status') {
-    const enabled = !!config[ENABLE_KEY];
-    return await message.sendReply(`_AutoDP_: ${enabled ? 'Enabled' : 'Disabled'}\n_Source:_ ${DEFAULT_IMAGE_API}`);
-  }
+    if (message.reply_message && message.reply_message.sender) {
+      targetJid = message.reply_message.sender;
+    }
 
-  return await message.sendReply('_Unknown subcommand. Use on/off/status_');
+    // If not a reply, and it's a private chat, target the chat participant (not the bot)
+    if (!targetJid) {
+      const chat = message.jid || '';
+      // For groups, raw JID contains - and @g.us
+      if (chat.endsWith('@s.whatsapp.net') || chat.endsWith('@c.us')) {
+        // In a one-on-one chat, the chat JID is the user's JID
+        targetJid = chat;
+      } else {
+        // In a group and not a reply, inform the user how to use the command
+        return await message.sendReply('_Reply to a user in the group with .grab to fetch their profile picture, or use .grab in a private chat._');
+      }
+    }
+
+    // Try to fetch the profile picture URL via the client
+    let ppUrl = null;
+    try {
+      // Many Baileys-based clients expose a 'profilePictureUrl' or `getProfilePicture`.
+      // Try common locations, falling back gracefully.
+      if (message.client && typeof message.client.profilePictureUrl === 'function') {
+        ppUrl = await message.client.profilePictureUrl(targetJid).catch(() => null);
+      }
+      if (!ppUrl && message.client && message.client.profilePicture) {
+        // some bots provide a map of profile pictures
+        ppUrl = message.client.profilePicture[targetJid] || null;
+      }
+      if (!ppUrl && message.client && message.client.getProfilePicture) {
+        ppUrl = await message.client.getProfilePicture(targetJid).catch(() => null);
+      }
+    } catch (e) {
+      ppUrl = null;
+    }
+
+    if (!ppUrl) {
+      return await message.sendReply('_Could not fetch profile picture for that user. They may not have a profile picture or the bot lacks permission._');
+    }
+
+    // First try: if the client can provide a direct image URL or stream, use it and
+    // send only the image (no extra caption/info) — this mirrors how `whois` sends DP.
+    try {
+      let directUrl = null;
+      if (message.client && typeof message.client.profilePictureUrl === 'function') {
+        // prefer asking for image type if supported
+        try { directUrl = await message.client.profilePictureUrl(targetJid, 'image'); } catch (e) {
+          directUrl = await message.client.profilePictureUrl(targetJid).catch(() => null);
+        }
+      }
+      if (directUrl) {
+        try {
+          const response = await axios.get(directUrl, { responseType: 'stream', timeout: 15000, headers: { 'User-Agent': 'WhatsApp/2.2108.8 Mozilla/5.0' } });
+          if (response && response.data) {
+            // Send only the image (no caption)
+            await message.client.sendMessage(message.jid, { image: { stream: response.data } });
+            return;
+          }
+        } catch (err) {
+          console.warn('grab.js direct stream failed, falling back to probes:', err && err.message ? err.message : err);
+        }
+      }
+    } catch (e) {
+      // Continue to fallback probing if direct method fails
+      console.warn('grab.js direct profilePictureUrl attempt failed:', e && e.message ? e.message : e);
+    }
+
+    // Build candidate URLs (try larger sizes first), then pick the best successful download.
+    const makeSizedUrl = (url, size) => {
+      if (!url || typeof url !== 'string') return url;
+      try {
+        let u = url;
+        u = u.replace(/([&?])type=preview(&|$)/i, '$1').replace(/[?&]$/, '');
+        // replace /s<number>/, =s<number>, _s<number>, w<number>-h<number>
+        u = u.replace(/\/s\d+(-c)?\//i, `/s${size}/`);
+        u = u.replace(/=s\d+(-c)?/i, `=s${size}`);
+        u = u.replace(/_s\d+/i, `_s${size}`);
+        u = u.replace(/w\d+-h\d+/i, `w${size}-h${size}`);
+        return u;
+      } catch (err) {
+        return url;
+      }
+    };
+
+    const sizes = [2048, 1024, 512, 256];
+    const candidates = [ppUrl];
+    for (const s of sizes) candidates.push(makeSizedUrl(ppUrl, s));
+
+    let best = { size: 0, buffer: null, mime: null, url: null, error: null };
+
+    for (const c of candidates) {
+      if (!c) continue;
+      try {
+        const res = await axios.get(c, { responseType: 'arraybuffer', timeout: 10000, validateStatus: null });
+        if (!res || !res.data) {
+          continue;
+        }
+        const buf = Buffer.from(res.data, 'binary');
+        const len = buf.length || 0;
+        const mime = (res.headers && res.headers['content-type']) || 'image/jpeg';
+        // Prefer larger buffers
+        if (len > best.size) {
+          best = { size: len, buffer: buf, mime, url: c };
+        }
+        // If we got a very large image, stop early
+        if (len > 100000) break;
+      } catch (err) {
+        // keep trying other candidates, but remember last error
+        best.error = err;
+        console.warn('grab.js candidate fetch error for', c, err && err.message ? err.message : err);
+      }
+    }
+
+    if (best.buffer && best.size > 0) {
+      // Send the best (largest) image we downloaded
+      await message.client.sendMessage(message.jid, { image: best.buffer, caption: `Profile picture (${best.size} bytes)`, mimetype: best.mime });
+      return;
+    }
+
+    // If no buffer was obtained, try sending the original URL (some hosts allow direct fetch)
+    try {
+      await message.client.sendMessage(message.jid, { image: { url: ppUrl }, caption: 'Profile picture', mimetype: 'image/jpeg' });
+      return;
+    } catch (err) {
+      console.error('grab.js final fallback error', err);
+      const userMessage = '_Failed to download or send the profile picture. They may not have a large DP or the bot lacks access._';
+      // Provide a slightly more detailed message for debugging in logs
+      console.error('grab.js details: ppUrl=', ppUrl, 'last error=', best.error || err);
+      await message.sendReply(userMessage);
+    }
+  } catch (e) {
+    console.error('grab.js error', e);
+    await message.sendReply('_Failed to grab profile picture. Try again later._');
+  }
 });
-
-// Try to start on load if enabled
-try {
-  if (config[ENABLE_KEY]) startAutodp(global?.BotClient || {});
-} catch (e) {
-  console.error('autodp init failed', e);
-}
