@@ -1,38 +1,44 @@
 const { Module } = require('../main');
-const config = require('../config');
 const axios = require('axios');
+
+// Supported prompts: hug, kiss, pat, slap, cuddle, wink, dance, etc.
+const SUPPORTED = [
+  'hug', 'kiss', 'pat', 'slap', 'cuddle', 'wink', 'dance', 'smile', 'wave', 'poke', 'cry', 'think', 'blush', 'happy', 'bored', 'sleep', 'laugh', 'handhold', 'highfive', 'yeet', 'bite', 'bully', 'shy', 'nom', 'punch', 'shoot', 'stare', 'thumbsup', 'facepalm', 'shrug', 'feed', 'tickle', 'love', 'confused', 'kill', 'kick', 'lick', 'pout', 'run', 'sip', 'tease', 'fail', 'derp', 'baka', 'smug', 'scream', 'punch', 'cry', 'sleep', 'angry', 'happy', 'sad', 'surprised', 'excited', 'bored', 'tired', 'scared', 'shocked', 'embarrassed', 'ashamed', 'proud', 'jealous', 'disgusted', 'amused', 'content', 'determined', 'frustrated', 'guilty', 'hopeful', 'lonely', 'nervous', 'relieved', 'silly', 'worried'
+];
+
+// nekos.best API: https://nekos.best/api/v2/<action>
+const API_BASE = 'https://nekos.best/api/v2/';
 
 Module({
   pattern: 'anime ?(.*)',
   fromMe: false,
-  desc: 'Fetches anime details with cover image',
-  type: 'search',
+  use: 'utility',
+  desc: 'Send an anime gif/video for a prompt (e.g. hug, kiss, pat)',
 }, async (message, match) => {
-  const query = match[1].trim();
-  if (!query) {
-    return await message.reply('❗ Please provide an anime name. Example: `.anime Naruto`');
+  const prompt = (match[1] || '').trim().toLowerCase();
+  if (!prompt) {
+    return await message.sendReply('_Usage: .anime <action>\nExample: .anime hug_');
   }
-
+  if (!SUPPORTED.includes(prompt)) {
+    return await message.sendReply('_Unsupported action. Try: ' + SUPPORTED.slice(0, 10).join(', ') + ', ..._');
+  }
   try {
-    const res = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`);
-    if (!res.data.data || res.data.data.length === 0) {
-      return await message.reply('😔 No anime found with that name.');
+    const url = API_BASE + encodeURIComponent(prompt);
+    const res = await axios.get(url);
+    const data = res.data && res.data.results && res.data.results[0];
+    if (!data || !(data.url || data.gif)) {
+      return await message.sendReply('_No anime gif found for: ' + prompt + '_');
     }
-
-    const anime = res.data.data[0];
-    const replyText = `🎬 *${anime.title}*  
-📅 Aired: ${anime.aired.string || 'Unknown'}  
-⭐ Score: ${anime.score || 'N/A'}  
-📖 Synopsis: ${anime.synopsis ? anime.synopsis.substring(0, 300) + '...' : 'No synopsis available.'}`;
-
-    // Send text first
-    await message.reply(replyText);
-
-    // Send cover image
-    if (anime.images && anime.images.jpg && anime.images.jpg.image_url) {
-      await message.sendFromUrl(anime.images.jpg.image_url, { caption: anime.title });
-    }
-  } catch (err) {
-    await message.reply('⚠️ Error fetching anime details. Try again later.');
+    // Prefer video if available, else gif
+    const mediaUrl = data.url || data.gif;
+    // Send as video/gif
+    await message.client.sendMessage(message.jid, {
+      video: { url: mediaUrl },
+      mimetype: 'video/mp4',
+      caption: `Anime ${prompt}`,
+    });
+  } catch (e) {
+    console.error('anime.js error', e);
+    await message.sendReply('_Failed to fetch anime gif. Try again later._');
   }
 });
