@@ -11,6 +11,7 @@ const config = require('../config');
 
 const STATE_KEY = 'AUTODP_SOURCES';
 const ENABLE_KEY = 'AUTODP_ENABLED';
+const DEFAULT_IMAGE_API = 'https://picsum.photos/500'; // Random image API
 
 function persist(key, value) {
   try {
@@ -57,23 +58,22 @@ let intervalId = null;
 
 async function startAutodp(client) {
   const enabled = config[ENABLE_KEY];
-  const srcs = (config[STATE_KEY] || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!enabled || !srcs.length) return;
+  if (!enabled) return;
 
   if (intervalId) clearInterval(intervalId);
 
   const run = async () => {
-    for (const url of srcs) {
-      try {
-        const buf = await downloadImage(url);
-        const ok = await setProfilePicture(client, buf);
-        if (ok) {
-          console.info('autodp: updated profile picture from', url);
-          break; // updated successfully, wait for next tick
-        }
-      } catch (e) {
-        console.error('autodp: failed for', url, e.message || e);
+    try {
+      // Fetch a random image from the API
+      const buf = await downloadImage(DEFAULT_IMAGE_API + '?random=' + Date.now());
+      const ok = await setProfilePicture(client, buf);
+      if (ok) {
+        console.info('autodp: updated profile picture from online source');
+      } else {
+        console.error('autodp: failed to update profile picture');
       }
+    } catch (e) {
+      console.error('autodp: failed to fetch/set image', e.message || e);
     }
   };
 
@@ -97,26 +97,21 @@ Module({
 }, async (message, match) => {
   const arg = (match[1] || '').trim();
   if (!arg) {
-    return await message.sendReply('_Usage: .autodp on <url1,url2> | .autodp off | .autodp status_');
+    return await message.sendReply('_Usage: .autodp on | .autodp off | .autodp status_\nWhen enabled, fetches a random image from the internet every 10 minutes.');
   }
 
-  const parts = arg.split(' ');
-  const cmd = parts[0].toLowerCase();
+  const cmd = arg.toLowerCase();
   if (cmd === 'on') {
-    const urls = parts.slice(1).join(' ').split(',').map(s => s.trim()).filter(Boolean);
-    if (!urls.length) return await message.sendReply('_Provide at least one image URL._');
-    persist(STATE_KEY, urls.join(','));
     persist(ENABLE_KEY, true);
     startAutodp(message.client);
-    return await message.sendReply(`_AutoDP enabled with ${urls.length} source(s)._`);
+    return await message.sendReply('_AutoDP enabled. Will fetch a random image every 10 minutes._');
   } else if (cmd === 'off') {
     persist(ENABLE_KEY, false);
     stopAutodp();
     return await message.sendReply('_AutoDP disabled._');
   } else if (cmd === 'status') {
     const enabled = !!config[ENABLE_KEY];
-    const urls = (config[STATE_KEY] || '').split(',').map(s => s.trim()).filter(Boolean);
-    return await message.sendReply(`_AutoDP_: ${enabled ? 'Enabled' : 'Disabled'}\n_Sources:_ ${urls.length ? urls.join('\n') : 'none'}`);
+    return await message.sendReply(`_AutoDP_: ${enabled ? 'Enabled' : 'Disabled'}\n_Source:_ ${DEFAULT_IMAGE_API}`);
   }
 
   return await message.sendReply('_Unknown subcommand. Use on/off/status_');
