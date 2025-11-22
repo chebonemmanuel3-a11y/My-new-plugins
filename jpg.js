@@ -9,14 +9,17 @@ Module({
   type: 'fun',
 }, async (message, match) => {
   try {
-    const text = match.trim().replace(/^\.jpg\s*/i, '') || 'Stylish Text';
+    // Clean the input: remove command prefix and trim
+    const text = match.replace(/^\.?jpg\s*/i, '').trim() || 'Stylish Text';
 
-    // Use a placeholder image generator that returns JPG directly
+    // Use a reliable image generator (placehold.co)
     const imageUrl = `https://placehold.co/800x400/000000/FFFFFF.jpg?text=${encodeURIComponent(text)}`;
 
+    // Download the image
     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data);
 
+    // Send the image back to chat
     await message.client.sendMessage(message.jid, {
       image: buffer,
       caption: `🖼️ JPG generated: ${text}`,
