@@ -9,25 +9,25 @@ Module({
   type: 'fun',
 }, async (message, match) => {
   try {
-    // Extract raw input after command
-    const raw = match?.trim();
-    if (!raw) return await message.reply('⚠️ Please provide text after .jpg');
+    // Clean input: remove command prefix if present
+    const raw = match?.trim() || '';
+    const text = raw.replace(/^\.?jpg\s*/i, '').trim() || 'Stylish Text';
 
-    // Clean the input (remove command prefix if present)
-    const input = raw.replace(/^\.?jpg\s*/i, '').trim();
+    // Use dummyimage.com (more reliable than placehold.co)
+    const imageUrl = `https://dummyimage.com/800x400/000/fff.jpg&text=${encodeURIComponent(text)}`;
 
-    // Generate image using dummyimage.com
-    const imageUrl = `https://dummyimage.com/800x400/000/fff.jpg&text=${encodeURIComponent(input)}`;
+    // Fetch image
     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data);
 
+    // Send back to chat
     await message.client.sendMessage(message.jid, {
       image: buffer,
-      caption: `🖼️ JPG generated: ${input}`,
+      caption: `🖼️ JPG generated: ${text}`,
       mimetype: 'image/jpeg'
     });
   } catch (err) {
     console.error('jpg.js error:', err);
-    await message.reply('⚠️ Failed to generate JPG image.');
+    await message.reply('⚠️ Failed to generate JPG image. Please try again.');
   }
 });
