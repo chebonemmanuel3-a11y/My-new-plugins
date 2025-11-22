@@ -9,7 +9,7 @@ Module({
   type: 'fun',
 }, async (message, match) => {
   try {
-    const text = match || 'Stylish Text';
+    const text = match.trim().replace(/^\.jpg\s*/i, '') || 'Stylish Text';
 
     // Use a placeholder image generator that returns JPG directly
     const imageUrl = `https://placehold.co/800x400/000000/FFFFFF.jpg?text=${encodeURIComponent(text)}`;
