@@ -56,57 +56,68 @@ Module({
       return await message.sendReply('_Could not fetch profile picture for that user. They may not have a profile picture or the bot lacks permission._');
     }
 
-    // Try to request a higher-resolution version of the profile picture by
-    // rewriting common WhatsApp size parameters in the URL (e.g. s96 -> s2048).
-    const upscaleProfileUrl = (url) => {
+    // Build candidate URLs (try larger sizes first), then pick the best successful download.
+    const makeSizedUrl = (url, size) => {
       if (!url || typeof url !== 'string') return url;
       try {
         let u = url;
-        // Remove preview/type query params that may force small size
-        u = u.replace(/([&?])type=preview(&|$)/i, '$1');
-        u = u.replace(/[?&]$/, '');
-
-        // Replace common size segments with a larger size
-        u = u.replace(/\/s\d+(-c)?\//i, '/s2048/');
-        u = u.replace(/=s\d+(-c)?/i, '=s2048');
-        u = u.replace(/_s\d+/i, '_s2048');
-        u = u.replace(/w\d+-h\d+/i, 'w2048-h2048');
-
+        u = u.replace(/([&?])type=preview(&|$)/i, '$1').replace(/[?&]$/, '');
+        // replace /s<number>/, =s<number>, _s<number>, w<number>-h<number>
+        u = u.replace(/\/s\d+(-c)?\//i, `/s${size}/`);
+        u = u.replace(/=s\d+(-c)?/i, `=s${size}`);
+        u = u.replace(/_s\d+/i, `_s${size}`);
+        u = u.replace(/w\d+-h\d+/i, `w${size}-h${size}`);
         return u;
       } catch (err) {
         return url;
       }
     };
 
-    const largeUrl = upscaleProfileUrl(ppUrl);
+    const sizes = [2048, 1024, 512, 256];
+    const candidates = [ppUrl];
+    for (const s of sizes) candidates.push(makeSizedUrl(ppUrl, s));
 
-    // Download the image first and re-upload it (gives better clarity than small thumbnails)
-    try {
-      const res = await axios.get(largeUrl, { responseType: 'arraybuffer', timeout: 20000 });
-      const mime = (res.headers && res.headers['content-type']) || 'image/jpeg';
-      const buffer = Buffer.from(res.data, 'binary');
+    let best = { size: 0, buffer: null, mime: null, url: null, error: null };
 
-      // If the downloaded image is suspiciously small, fall back to the original URL
-      if (buffer.length < 5000 && largeUrl !== ppUrl) {
-        const tryOrig = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 15000 }).catch(() => null);
-        if (tryOrig && tryOrig.data) {
-          const mime2 = (tryOrig.headers && tryOrig.headers['content-type']) || mime;
-          const buffer2 = Buffer.from(tryOrig.data, 'binary');
-          await message.client.sendMessage(message.jid, { image: buffer2, caption: 'Profile picture', mimetype: mime2 });
-          return;
-        }
-      }
-
-      await message.client.sendMessage(message.jid, { image: buffer, caption: 'Profile picture', mimetype: mime });
-    } catch (err) {
-      console.error('grab.js download error', err);
-      // Fallback: try sending by URL if download fails
+    for (const c of candidates) {
+      if (!c) continue;
       try {
-        await message.client.sendMessage(message.jid, { image: { url: largeUrl }, caption: 'Profile picture', mimetype: 'image/jpeg' });
-      } catch (err2) {
-        console.error('grab.js fallback send error', err2);
-        await message.sendReply('_Failed to download or send the profile picture. They may not have a large DP or the bot lacks access._');
+        const res = await axios.get(c, { responseType: 'arraybuffer', timeout: 10000, validateStatus: null });
+        if (!res || !res.data) {
+          continue;
+        }
+        const buf = Buffer.from(res.data, 'binary');
+        const len = buf.length || 0;
+        const mime = (res.headers && res.headers['content-type']) || 'image/jpeg';
+        // Prefer larger buffers
+        if (len > best.size) {
+          best = { size: len, buffer: buf, mime, url: c };
+        }
+        // If we got a very large image, stop early
+        if (len > 100000) break;
+      } catch (err) {
+        // keep trying other candidates, but remember last error
+        best.error = err;
+        console.warn('grab.js candidate fetch error for', c, err && err.message ? err.message : err);
       }
+    }
+
+    if (best.buffer && best.size > 0) {
+      // Send the best (largest) image we downloaded
+      await message.client.sendMessage(message.jid, { image: best.buffer, caption: `Profile picture (${best.size} bytes)`, mimetype: best.mime });
+      return;
+    }
+
+    // If no buffer was obtained, try sending the original URL (some hosts allow direct fetch)
+    try {
+      await message.client.sendMessage(message.jid, { image: { url: ppUrl }, caption: 'Profile picture', mimetype: 'image/jpeg' });
+      return;
+    } catch (err) {
+      console.error('grab.js final fallback error', err);
+      const userMessage = '_Failed to download or send the profile picture. They may not have a large DP or the bot lacks access._';
+      // Provide a slightly more detailed message for debugging in logs
+      console.error('grab.js details: ppUrl=', ppUrl, 'last error=', best.error || err);
+      await message.sendReply(userMessage);
     }
   } catch (e) {
     console.error('grab.js error', e);
