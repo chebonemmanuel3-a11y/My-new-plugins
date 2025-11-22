@@ -56,6 +56,33 @@ Module({
       return await message.sendReply('_Could not fetch profile picture for that user. They may not have a profile picture or the bot lacks permission._');
     }
 
+    // First try: if the client can provide a direct image URL or stream, use it and
+    // send only the image (no extra caption/info) — this mirrors how `whois` sends DP.
+    try {
+      let directUrl = null;
+      if (message.client && typeof message.client.profilePictureUrl === 'function') {
+        // prefer asking for image type if supported
+        try { directUrl = await message.client.profilePictureUrl(targetJid, 'image'); } catch (e) {
+          directUrl = await message.client.profilePictureUrl(targetJid).catch(() => null);
+        }
+      }
+      if (directUrl) {
+        try {
+          const response = await axios.get(directUrl, { responseType: 'stream', timeout: 15000, headers: { 'User-Agent': 'WhatsApp/2.2108.8 Mozilla/5.0' } });
+          if (response && response.data) {
+            // Send only the image (no caption)
+            await message.client.sendMessage(message.jid, { image: { stream: response.data } });
+            return;
+          }
+        } catch (err) {
+          console.warn('grab.js direct stream failed, falling back to probes:', err && err.message ? err.message : err);
+        }
+      }
+    } catch (e) {
+      // Continue to fallback probing if direct method fails
+      console.warn('grab.js direct profilePictureUrl attempt failed:', e && e.message ? e.message : e);
+    }
+
     // Build candidate URLs (try larger sizes first), then pick the best successful download.
     const makeSizedUrl = (url, size) => {
       if (!url || typeof url !== 'string') return url;
