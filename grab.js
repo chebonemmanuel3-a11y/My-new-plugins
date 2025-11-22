@@ -1,4 +1,5 @@
 const { Module } = require('../main');
+const axios = require('axios');
 
 // Grab profile picture (DP) of a user.
 // Usage:
@@ -55,12 +56,58 @@ Module({
       return await message.sendReply('_Could not fetch profile picture for that user. They may not have a profile picture or the bot lacks permission._');
     }
 
-    // Send the image back to the chat
-    await message.client.sendMessage(message.jid, {
-      image: { url: ppUrl },
-      caption: 'Profile picture',
-      mimetype: 'image/jpeg',
-    });
+    // Try to request a higher-resolution version of the profile picture by
+    // rewriting common WhatsApp size parameters in the URL (e.g. s96 -> s2048).
+    const upscaleProfileUrl = (url) => {
+      if (!url || typeof url !== 'string') return url;
+      try {
+        let u = url;
+        // Remove preview/type query params that may force small size
+        u = u.replace(/([&?])type=preview(&|$)/i, '$1');
+        u = u.replace(/[?&]$/, '');
+
+        // Replace common size segments with a larger size
+        u = u.replace(/\/s\d+(-c)?\//i, '/s2048/');
+        u = u.replace(/=s\d+(-c)?/i, '=s2048');
+        u = u.replace(/_s\d+/i, '_s2048');
+        u = u.replace(/w\d+-h\d+/i, 'w2048-h2048');
+
+        return u;
+      } catch (err) {
+        return url;
+      }
+    };
+
+    const largeUrl = upscaleProfileUrl(ppUrl);
+
+    // Download the image first and re-upload it (gives better clarity than small thumbnails)
+    try {
+      const res = await axios.get(largeUrl, { responseType: 'arraybuffer', timeout: 20000 });
+      const mime = (res.headers && res.headers['content-type']) || 'image/jpeg';
+      const buffer = Buffer.from(res.data, 'binary');
+
+      // If the downloaded image is suspiciously small, fall back to the original URL
+      if (buffer.length < 5000 && largeUrl !== ppUrl) {
+        const tryOrig = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 15000 }).catch(() => null);
+        if (tryOrig && tryOrig.data) {
+          const mime2 = (tryOrig.headers && tryOrig.headers['content-type']) || mime;
+          const buffer2 = Buffer.from(tryOrig.data, 'binary');
+          await message.client.sendMessage(message.jid, { image: buffer2, caption: 'Profile picture', mimetype: mime2 });
+          return;
+        }
+      }
+
+      await message.client.sendMessage(message.jid, { image: buffer, caption: 'Profile picture', mimetype: mime });
+    } catch (err) {
+      console.error('grab.js download error', err);
+      // Fallback: try sending by URL if download fails
+      try {
+        await message.client.sendMessage(message.jid, { image: { url: largeUrl }, caption: 'Profile picture', mimetype: 'image/jpeg' });
+      } catch (err2) {
+        console.error('grab.js fallback send error', err2);
+        await message.sendReply('_Failed to download or send the profile picture. They may not have a large DP or the bot lacks access._');
+      }
+    }
   } catch (e) {
     console.error('grab.js error', e);
     await message.sendReply('_Failed to grab profile picture. Try again later._');
