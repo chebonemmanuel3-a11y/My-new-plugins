@@ -30,7 +30,7 @@ Module(
       } catch (e) {
         console.error("Raganork-MD: Failed to update bot profile picture:", e.message);
       }
-    }, 10 * 60 * 1000);
+    }, 1 * 60 * 1000);
   }
 );
 
