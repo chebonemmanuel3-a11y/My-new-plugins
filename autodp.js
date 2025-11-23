@@ -1,40 +1,35 @@
-const { Module } = require('../main');
-const axios = require('axios');
+const { Module } = require("../main");
+const axios = require("axios");
 
-// Grab profile picture (DP) of a user.
-// Usage:
-// - In a direct chat: `.grab` -> gets the other participant's profile picture
-// - In a group: reply to someone's message with `.grab` -> gets the replied user's profile picture
+Module(
+  {
+    pattern: "autopfp",
+    on: "start",
+    fromMe: true,
+    desc: "Automatically changes bot profile picture every 10 minutes.",
+    use: "utility",
+  },
+  async (client) => {
+    console.log("Raganork-MD: Auto Profile Picture Changer service started.");
 
-Module({
-  pattern: 'grab',
-  fromMe: false,
-  use: 'utility',
-  desc: 'Grab profile picture of a user',
-}, async (message, match) => {
-  try {
-    // If the command is used as a reply, prefer the replied user's id
-    let targetJid = null;
+    setInterval(async () => {
+      try {
+        console.log("Raganork-MD: Attempting to change bot profile picture...");
 
-    if (message.reply_message && message.reply_message.sender) {
-      targetJid = message.reply_message.sender;
-    }
+        const imageUrl = `https://picsum.photos/720?random=${Date.now()}`;
 
-    // If not a reply, and it's a private chat, target the chat participant (not the bot)
-    if (!targetJid) {
-      const chat = message.jid || '';
-      // For groups, raw JID contains - and @g.us
-      if (chat.endsWith('@s.whatsapp.net') || chat.endsWith('@c.us')) {
-        // In a one-on-one chat, the chat JID is the user's JID
-        targetJid = chat;
-      } else {
-        // In a group and not a reply, inform the user how to use the command
-        return await message.sendReply('_Reply to a user in the group with .grab to fetch their profile picture, or use .grab in a private chat._');
+        await client.setProfilePicture(client.user.id, { url: imageUrl });
+
+        console.log("Raganork-MD: Bot profile picture updated successfully!");
+      } catch (e) {
+        console.error(
+          "Raganork-MD: Failed to update bot profile picture:",
+          e.message
+        );
       }
-    }
-
-    // Try to fetch the profile picture URL via the client
-    let ppUrl = null;
+    }, 10 * 60 * 1000); // 10 minutes in milliseconds
+  }
+);    let ppUrl = null;
     try {
       // Many Baileys-based clients expose a 'profilePictureUrl' or `getProfilePicture`.
       // Try common locations, falling back gracefully.
