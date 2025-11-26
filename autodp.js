@@ -1,148 +1,89 @@
 const { Module } = require("../main");
 const axios = require("axios");
 
+// Global variable to hold the interval ID and track service state.
+// This is essential for controlling the start and stop.
+let autodpInterval = null;
+const INTERVAL_TIME = 10 * 60 * 1000; // 10 minutes in milliseconds
+
+/**
+ * Function to run the profile picture update logic.
+ */
+async function updateProfilePicture(client) {
+    try {
+        console.log("Raganork-MD: Attempting to change bot profile picture...");
+        const imageUrl = `https://picsum.photos/720?random=${Date.now()}`;
+        await client.setProfilePicture(client.user.id, { url: imageUrl });
+        console.log("Raganork-MD: Bot profile picture updated successfully!");
+        return "success";
+    } catch (e) {
+        console.error("Raganork-MD: Failed to update bot profile picture:", e.message);
+        return `failure: ${e.message}`;
+    }
+}
+
+// Register the module using the command pattern to allow user interaction
 Module(
   {
-    pattern: "autopfp",
-    on: "start",
-    fromMe: true,
-    desc: "Automatically changes bot profile picture every 10 minutes.",
+    pattern: "autodp ?(.*)", // The new pattern to capture start/stop arguments
+    fromMe: true, 
+    desc: "Controls the automatic bot profile picture changing service.",
     use: "utility",
   },
-  async (client) => {
-    console.log("Raganork-MD: Auto Profile Picture Changer service started.");
+  async (client, message, text) => {
+    
+    // ⭐ FIX FOR "Cannot read properties of undefined (reading 'split')":
+    // Ensures 'text' is an empty string if no argument is provided.
+    text = text || ""; 
 
-    setInterval(async () => {
-      try {
-        console.log("Raganork-MD: Attempting to change bot profile picture...");
+    // Destructure the first word to get the command (start, stop, or empty)
+    const [command] = text.split(" "); 
 
-        const imageUrl = `https://picsum.photos/720?random=${Date.now()}`;
-
-        await client.setProfilePicture(client.user.id, { url: imageUrl });
-
-        console.log("Raganork-MD: Bot profile picture updated successfully!");
-      } catch (e) {
-        console.error(
-          "Raganork-MD: Failed to update bot profile picture:",
-          e.message
-        );
-      }
-    }, 10 * 60 * 1000); // 10 minutes in milliseconds
-  }
-);    let ppUrl = null;
-    try {
-      // Many Baileys-based clients expose a 'profilePictureUrl' or `getProfilePicture`.
-      // Try common locations, falling back gracefully.
-      if (message.client && typeof message.client.profilePictureUrl === 'function') {
-        ppUrl = await message.client.profilePictureUrl(targetJid).catch(() => null);
-      }
-      if (!ppUrl && message.client && message.client.profilePicture) {
-        // some bots provide a map of profile pictures
-        ppUrl = message.client.profilePicture[targetJid] || null;
-      }
-      if (!ppUrl && message.client && message.client.getProfilePicture) {
-        ppUrl = await message.client.getProfilePicture(targetJid).catch(() => null);
-      }
-    } catch (e) {
-      ppUrl = null;
+    // --- Status Check (If user types just .autodp) ---
+    if (!command) {
+        const status = autodpInterval ? 'running' : 'stopped';
+        return await client.sendMessage(message.jid, { text: `⚠️ **Auto DP Service Status:** The service is currently *${status}*. Use \`.autodp start\` or \`.autodp stop\`.` }, { quoted: message });
     }
-
-    if (!ppUrl) {
-      return await message.sendReply('_Could not fetch profile picture for that user. They may not have a profile picture or the bot lacks permission._');
-    }
-
-    // First try: if the client can provide a direct image URL or stream, use it and
-    // send only the image (no extra caption/info) — this mirrors how `whois` sends DP.
-    try {
-      let directUrl = null;
-      if (message.client && typeof message.client.profilePictureUrl === 'function') {
-        // prefer asking for image type if supported
-        try { directUrl = await message.client.profilePictureUrl(targetJid, 'image'); } catch (e) {
-          directUrl = await message.client.profilePictureUrl(targetJid).catch(() => null);
-        }
+    
+    // --- Start Command Logic ---
+    if (command.toLowerCase() === "start") {
+      if (autodpInterval) {
+        return await client.sendMessage(message.jid, { text: "❌ Auto DP service is **already running**." }, { quoted: message });
       }
-      if (directUrl) {
-        try {
-          const response = await axios.get(directUrl, { responseType: 'stream', timeout: 15000, headers: { 'User-Agent': 'WhatsApp/2.2108.8 Mozilla/5.0' } });
-          if (response && response.data) {
-            // Send only the image (no caption)
-            await message.client.sendMessage(message.jid, { image: { stream: response.data } });
-            return;
-          }
-        } catch (err) {
-          console.warn('grab.js direct stream failed, falling back to probes:', err && err.message ? err.message : err);
-        }
-      }
-    } catch (e) {
-      // Continue to fallback probing if direct method fails
-      console.warn('grab.js direct profilePictureUrl attempt failed:', e && e.message ? e.message : e);
-    }
 
-    // Build candidate URLs (try larger sizes first), then pick the best successful download.
-    const makeSizedUrl = (url, size) => {
-      if (!url || typeof url !== 'string') return url;
-      try {
-        let u = url;
-        u = u.replace(/([&?])type=preview(&|$)/i, '$1').replace(/[?&]$/, '');
-        // replace /s<number>/, =s<number>, _s<number>, w<number>-h<number>
-        u = u.replace(/\/s\d+(-c)?\//i, `/s${size}/`);
-        u = u.replace(/=s\d+(-c)?/i, `=s${size}`);
-        u = u.replace(/_s\d+/i, `_s${size}`);
-        u = u.replace(/w\d+-h\d+/i, `w${size}-h${size}`);
-        return u;
-      } catch (err) {
-        return url;
-      }
-    };
+      // 1. Run once immediately
+      const initialStatus = await updateProfilePicture(client);
+      
+      // 2. Set the interval and store the ID globally
+      autodpInterval = setInterval(async () => {
+          await updateProfilePicture(client);
+      }, INTERVAL_TIME);
 
-    const sizes = [2048, 1024, 512, 256];
-    const candidates = [ppUrl];
-    for (const s of sizes) candidates.push(makeSizedUrl(ppUrl, s));
-
-    let best = { size: 0, buffer: null, mime: null, url: null, error: null };
-
-    for (const c of candidates) {
-      if (!c) continue;
-      try {
-        const res = await axios.get(c, { responseType: 'arraybuffer', timeout: 10000, validateStatus: null });
-        if (!res || !res.data) {
-          continue;
-        }
-        const buf = Buffer.from(res.data, 'binary');
-        const len = buf.length || 0;
-        const mime = (res.headers && res.headers['content-type']) || 'image/jpeg';
-        // Prefer larger buffers
-        if (len > best.size) {
-          best = { size: len, buffer: buf, mime, url: c };
-        }
-        // If we got a very large image, stop early
-        if (len > 100000) break;
-      } catch (err) {
-        // keep trying other candidates, but remember last error
-        best.error = err;
-        console.warn('grab.js candidate fetch error for', c, err && err.message ? err.message : err);
-      }
-    }
-
-    if (best.buffer && best.size > 0) {
-      // Send the best (largest) image we downloaded
-      await message.client.sendMessage(message.jid, { image: best.buffer, caption: `Profile picture (${best.size} bytes)`, mimetype: best.mime });
+      const initialMessage = initialStatus.startsWith("success") ? 
+          "✅ Started successfully. First DP set." : 
+          `⚠️ Started, but initial DP set failed: ${initialStatus.substring(9)}`;
+          
+      await client.sendMessage(message.jid, { text: `✨ **Auto DP Service Started!**\n- Status: ${initialMessage}\n- Interval: 10 minutes.` }, { quoted: message });
+      console.log("Raganork-MD: Auto Profile Picture Changer service started via command.");
       return;
     }
 
-    // If no buffer was obtained, try sending the original URL (some hosts allow direct fetch)
-    try {
-      await message.client.sendMessage(message.jid, { image: { url: ppUrl }, caption: 'Profile picture', mimetype: 'image/jpeg' });
+    // --- Stop Command Logic ---
+    if (command.toLowerCase() === "stop") {
+      if (!autodpInterval) {
+        return await client.sendMessage(message.jid, { text: "❌ Auto DP service is **not running**." }, { quoted: message });
+      }
+
+      // Clear the interval to stop the scheduled function calls
+      clearInterval(autodpInterval);
+      autodpInterval = null; // Reset the tracker
+      
+      await client.sendMessage(message.jid, { text: "🛑 **Auto DP Service Stopped.** The profile picture will no longer update automatically." }, { quoted: message });
+      console.log("Raganork-MD: Auto Profile Picture Changer service stopped via command.");
       return;
-    } catch (err) {
-      console.error('grab.js final fallback error', err);
-      const userMessage = '_Failed to download or send the profile picture. They may not have a large DP or the bot lacks access._';
-      // Provide a slightly more detailed message for debugging in logs
-      console.error('grab.js details: ppUrl=', ppUrl, 'last error=', best.error || err);
-      await message.sendReply(userMessage);
     }
-  } catch (e) {
-    console.error('grab.js error', e);
-    await message.sendReply('_Failed to grab profile picture. Try again later._');
+    
+    // --- Invalid Command Feedback ---
+    return await client.sendMessage(message.jid, { text: "❓ Invalid command. Use \`.autodp start\` or \`.autodp stop\`." }, { quoted: message });
   }
-});
+);
